@@ -1,31 +1,49 @@
 
 from torchvision import datasets, transforms
-
+from torch.utils.data import DataLoader,Dataset
+import torch 
 import numpy as np
 
+class SplitDataset(Dataset):
+    def __init__(self,datalist,transforms=None):
+        super(SplitDataset,self).__init__()
+        self.transforms = transforms
+        self.datalist = datalist
+    def __getitem__(self, index):
+        data = self.datalist[index]
+        if self.transforms:
+            data[0] = self.transforms(data[0])
+        # print(data)
+        return data
+    def __len__(self):
+        return(len(self.datalist))
 
 cscores = np.load('cifar100-cscores-orig-order.npz')
 cscorestest = np.load('cscorestest.npy')
 
-transform = transforms.Compose(
+transform_train = transforms.Compose(
     [
-        transforms.RandomCrop((32,32),padding=4),
-        transforms.RandomVerticalFlip(),
+        transforms.RandomCrop(32,padding=4),
+        transforms.RandomHorizontalFlip(),
+        # transforms.RandomVerticalFlip(),
         transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ]
     )
-
-trainset = datasets.CIFAR100(root='./CIFAR-100', train=True, download=True, transform=transform)
-testset = datasets.CIFAR100(root='./CIFAR-100', train=False, download=True, transform=transform)
+transform_test = transforms.Compose(
+    [
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ]
+    )
+trainset = datasets.CIFAR100(root='./CIFAR-100', train=True, download=True)
+testset = datasets.CIFAR100(root='./CIFAR-100', train=False, download=True)
 
 # Decorete the dataset
 def data_split(rawset):
-    dataset=[]
 
-    for data in rawset:
-        dataset.append({"image":data[0],"label":data[1]})
-    return np.array(dataset)
+    return np.array(rawset)
+
 trainset = data_split(trainset)
 testset = data_split(testset)
 
@@ -44,12 +62,16 @@ def get_subset(dataset,cscore):
     for k,indexs in group_index:
         a = np.stack(i[0] for i in list(indexs))
         subdataset = dataset[a]
-        subsets.append({"key":k,'dataset':subdataset}) 
+        subsets.append({"key":k,'dataset':SplitDataset(subdataset.tolist(),transforms=transform_test)}) 
     return subsets
 
 trainsubset = get_subset(trainset,cscores['scores'])
 testsubset = get_subset(testset,cscorestest)
-
+trainset = SplitDataset(trainset.tolist(),transforms=transform_train)
+testset = SplitDataset(testset.tolist(),transforms=transform_test)
 
 if __name__ == "__main__":
-    print(testsubset)
+    testloader = DataLoader(testset,batch_size=128,shuffle=False, num_workers=2)
+    for data in testloader:
+        print(data)
+    

@@ -1,5 +1,4 @@
-from random import shuffle
-from sched import scheduler
+
 import torch
 from torch.autograd import Variable
 from torch.utils.data import DataLoader,Dataset
@@ -15,7 +14,7 @@ import sys
 import numpy as np
 
 #init
-seed = 0
+seed = 100
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 
@@ -23,7 +22,7 @@ torch.cuda.manual_seed(seed)
 logging.basicConfig(level = logging.INFO,format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 GPU = torch.cuda.is_available()
 model = ResNet18(classnum=100)
-
+criterion = torch.nn.CrossEntropyLoss()
 if GPU:
     model.cuda()
     torch.backends.cudnn.benchmark = True
@@ -40,7 +39,7 @@ if flag == 'sgd':
         nesterov = True,
         weight_decay=5e-4,
     )
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,milestones=[60,90,120],gamma=0.2,last_epoch=-1)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,milestones=[60,120,160],gamma=0.2,last_epoch=-1)
 else:
     lr = float(flag)
     optimizer = torch.optim.Adam(
@@ -51,13 +50,13 @@ else:
 
 def train_each_epoch(epoch:int, optimizer,trainloader):
     model.train()
-    criterion = torch.nn.CrossEntropyLoss()
+
     print("*"*10)
     print(f"epoch{epoch+1}")
     train_loss = 0.0
     for data in trainloader:
-        image = data['image']
-        label = data['label']
+        image = data[0]
+        label = data[1]
         if torch.cuda.is_available():
             image = Variable(image).cuda()
             label = Variable(label).cuda()
@@ -73,12 +72,15 @@ def train_each_epoch(epoch:int, optimizer,trainloader):
         optimizer.step()
     logging.info(f"Finish {epoch+1} epoch,Loss {train_loss}")
 
+@torch.no_grad()
 def test(group,datasetsize,dataloader):
     acc = 0.0
+    test_loss = 0.0
+
     model.eval()
     for data in dataloader:
-        image = data['image']
-        label = data['label']
+        image = data[0]
+        label = data[1]
         # print(image)
         # print(label)
         if GPU:
@@ -88,10 +90,12 @@ def test(group,datasetsize,dataloader):
             image = Variable(image)
             label = Variable(label)
         output = model(image)
+        loss = criterion(output,label)
+        test_loss += loss.item()
         acc += (output.argmax(1) == label).sum()
     acc_rate  = float(acc/datasetsize)
     # print(type(acc_rate))
-    logging.info(f"group = {group}, acc_rate={acc_rate}, acc={acc}, datasetsize={datasetsize}")
+    logging.info(f"group = {group}, acc_rate={acc_rate},test_loss={test_loss} acc={acc}, datasetsize={datasetsize}")
     return acc_rate
 
 def init(checkpointfile):
@@ -126,7 +130,7 @@ if __name__ == "__main__":
 
     # test(group="all",dataset=trainset,dataloader=trainloader)
     if flag == 'sgd':
-        jsonfile = f'CIFAR-100_ResNet18_SGD_{lr}_{batchsize}'
+        jsonfile = f'CIFAR-100_no_split_no_shuffle_transform_horizontal_differ_between_train_and_test_ResNet18_SGD_{lr}_{batchsize}'
     else:
         jsonfile = f'CIFAR-100_ResNet18_Adam_{lr}_{batchsize}'
     checkpointfile = './checkpoint/checkpoint'+jsonfile+'.tar'
@@ -135,12 +139,12 @@ if __name__ == "__main__":
     result,testresult,epoch_have_done = init(checkpointfile)
     # print(model.state_dict())
 
-    trainloader = DataLoader(trainset,batch_size=batchsize,shuffle=True)
-    testloader = DataLoader(testset,batch_size=batchsize,shuffle=True)
+    trainloader = DataLoader(trainset,batch_size=batchsize,shuffle=True, num_workers=2)
+    testloader = DataLoader(testset,batch_size=batchsize,shuffle=False, num_workers=2)
     for subset in trainsubset:
-        subset['dataloader'] = DataLoader(subset['dataset'],batch_size=batchsize,shuffle=True)
+        subset['dataloader'] = DataLoader(subset['dataset'],batch_size=batchsize,shuffle=False, num_workers=2)
     for subset in testsubset:
-        subset['dataloader'] = DataLoader(subset['dataset'],batch_size=batchsize,shuffle=True)
+        subset['dataloader'] = DataLoader(subset['dataset'],batch_size=batchsize,shuffle=False, num_workers=2)
 
     
     # optimizer = torch.optim.SGD(
@@ -151,8 +155,8 @@ if __name__ == "__main__":
     #     weight_decay=5e-4,
     # )
 
-    for epoch in range(epoch_have_done+1,10):
-                
+    for epoch in range(epoch_have_done+1,200):
+        
         train_each_epoch(epoch=epoch,optimizer=optimizer,trainloader=trainloader)
         result['all'].append(test(group="all",datasetsize=len(trainset),dataloader=trainloader))
         testresult['all'].append(result['all'][-1])
@@ -176,10 +180,10 @@ if __name__ == "__main__":
             checkpointfile)
     for res in result:
         if len(res) == 0:
-            del res
+            result.remove(res)
     for res in testresult:
         if len(res) == 0:
-            del res
+            testresult.remove(res)
     
     if not os.path.exists("./data/"):
         os.mkdir("./data")
@@ -190,6 +194,5 @@ if __name__ == "__main__":
     with open (f"./test/{jsonfile}.json",'w')as f:
         json.dump(testresult,f)
         
-    
 
     
