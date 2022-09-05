@@ -113,10 +113,6 @@ def test(group,datasetsize,dataloader):
     for i,data in enumerate(dataloader):
         image = data[0]
         label = data[1]
-        # print(image)
-        # print(label)
-            # for i,data in enumerate(trainloader):
-        # print(type(data[1]))
         writer.add_images(group,data[0],i )
         if GPU:
             image = Variable(image).cuda()
@@ -129,7 +125,6 @@ def test(group,datasetsize,dataloader):
         test_loss += loss.item()
         acc += (output.argmax(1).eq(label)).sum().item()
     acc_rate  = float(acc/datasetsize)
-    # print(type(acc_rate))
     logging.info(f"group = {group}, acc_rate={acc_rate},test_loss={test_loss} acc={acc}, datasetsize={datasetsize}")
     return acc_rate
 
@@ -143,37 +138,27 @@ if __name__ =='__main__':
     testsetraw, batch_size=128, shuffle=False, num_workers=2)
     trainloaderraw = torch.utils.data.DataLoader(
     trainsetraw, batch_size=128, shuffle=False, num_workers=2)
-
-    # print((trainsetraw)[3])
-    # print((trainset)[3])  
-
-    # writer = SummaryWriter("trainimage")
-    # for i,data in enumerate(trainloader):
-    #     # print(type(data[1]))
-    #     writer.add_images("traindata",data[0],i )
-
-    # tb_dir = './runs/differ-transforms-on-reverse-trainset/'
-
+    
+    # compare the two dataset:
     if flag =='raw':
-        # writer = SummaryWriter(f"{tb_dir}raw")
+        
 
         for epoch in range(100):
             train_each_epoch(epoch=epoch,optimizer=optimizer,trainloader=trainloaderraw)
             scheduler.step()
             print(optimizer.state_dict()['param_groups'][0]['lr'])
             writer.add_scalar('trainraw_acc',test(group='all',datasetsize = len(trainsetraw),dataloader=trainloaderraw),epoch)
-            writer.add_scalar('train_acc',test(group='test',datasetsize = len(trainset),dataloader=trainloader),epoch)
+            writer.add_scalar('testraw_acc',test(group='test',datasetsize = len(testsetraw),dataloader=testloaderraw),epoch)
         writer.close()
     else:
         
-        # writer = SummaryWriter(f"{tb_dir}noraw")
-
+        
         for epoch in range(100):
             train_each_epoch(epoch=epoch,optimizer=optimizer,trainloader=trainloader)
             scheduler.step()
             
             print(optimizer.state_dict()['param_groups'][0]['lr'])
             writer.add_scalar('train_acc',test(group='all',datasetsize = len(trainset),dataloader=trainloader),epoch)
-            writer.add_scalar('trainraw_acc',test(group='test',datasetsize = len(trainsetraw),dataloader=trainloaderraw),epoch)
+            writer.add_scalar('test_acc',test(group='test',datasetsize = len(testset),dataloader=testloader),epoch)
         writer.close()
     
